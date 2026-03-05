@@ -10,15 +10,14 @@ import sys
 import os
 
 
-
 class AudioApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Prosta analiza dźwięku")
+
         self.audio = None
         self.play_thread = None
         self.stop_playback = False
-        self.stream = None
 
         # ------------------- GUI -------------------
         self.left_frame = tk.Frame(root, width=250)
@@ -40,35 +39,51 @@ class AudioApp:
         self.spec_btn = tk.Button(self.left_frame, text="Spektrogram", width=25, command=self.show_spectrogram)
         self.spec_btn.pack(pady=5)
 
+        self.save_btn = tk.Button(self.left_frame, text="Zapisz wykres", width=25, command=self.save_current_plot)
+        self.save_btn.pack(pady=5)
+
         self.play_btn = tk.Button(self.left_frame, text="Odtwórz", width=25, command=self.toggle_play)
         self.play_btn.pack(pady=10)
 
         self.quit_btn = tk.Button(self.left_frame, text="Zakończ program", width=25, command=self.quit_program)
         self.quit_btn.pack(pady=10)
 
-        # Wykresy
-        self.fig, self.ax = plt.subplots(figsize=(6,4))
+        # Wykres osadzony w GUI
+        self.fig, self.ax = plt.subplots(figsize=(6, 4))
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.right_frame)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    # ------------------- audio -------------------
+    # ------------------- AUDIO -------------------
+
     def load_audio(self):
         filepath = filedialog.askopenfilename(filetypes=[("Audio files", "*.wav *.mp3")])
         if filepath:
             try:
                 self.audio = AudioFileLibrosa(filepath)
                 self.audio.load()
+
+                print("\n--- Dane pliku audio ---")
+                print(f"Plik: {self.audio.path}")
+                print(f"Czas trwania: {self.audio.get_duration():.2f} s")
+                print(f"Liczba próbek: {len(self.audio.data)}")
+                print(f"RMS całkowity: {self.audio.get_rms():.6f}")
+                print(f"Częstotliwość próbkowania: {self.audio.samplerate} Hz")
+                print("-------------------------\n")
+
                 self.ax.clear()
                 self.canvas.draw()
-                messagebox.showinfo("Sukces", f"Wczytano plik: {filepath}")
+
+                messagebox.showinfo("Sukces", f"Wczytano plik:\n{filepath}")
+
             except Exception as e:
                 messagebox.showerror("Błąd", f"Nie udało się wczytać pliku.\n{e}")
 
-    # ------------------- wykresy -------------------
+    # ------------------- WYKRESY -------------------
+
     def show_waveform(self):
         if self.audio:
             self.ax.clear()
-            self.ax.plot(self.audio.get_time_axis(), self.audio.data, color="blue")
+            self.ax.plot(self.audio.get_time_axis(), self.audio.data)
             self.ax.set_title("Waveform")
             self.ax.set_xlabel("Czas [s]")
             self.ax.set_ylabel("Amplituda")
@@ -81,7 +96,7 @@ class AudioApp:
         if self.audio:
             self.ax.clear()
             rms = self.audio.get_rms_over_time()
-            self.ax.plot(rms, color="green")
+            self.ax.plot(rms)
             self.ax.set_title("RMS w czasie")
             self.ax.set_xlabel("Okno")
             self.ax.set_ylabel("RMS")
@@ -101,7 +116,30 @@ class AudioApp:
         else:
             messagebox.showwarning("Brak pliku", "Najpierw wczytaj plik audio.")
 
-    # ------------------- odtwarzanie -------------------
+    # ------------------- ZAPIS WYKRESU -------------------
+
+    def save_current_plot(self):
+        if self.audio is None:
+            messagebox.showwarning("Brak pliku", "Najpierw wczytaj plik audio.")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg"),
+                ("PDF files", "*.pdf"),
+                ("SVG files", "*.svg")
+            ]
+        )
+
+        if file_path:
+            self.fig.savefig(file_path, dpi=300)
+            messagebox.showinfo("Sukces", f"Wykres zapisany jako:\n{file_path}")
+            print(f"Wykres zapisany jako: {file_path}")
+
+    # ------------------- ODTWARZANIE -------------------
+
     def toggle_play(self):
         if self.audio is None:
             messagebox.showwarning("Brak pliku", "Najpierw wczytaj plik audio.")
@@ -119,38 +157,27 @@ class AudioApp:
     def play_audio(self):
         sd.stop()
         sd.play(self.audio.data, samplerate=self.audio.samplerate)
+
         try:
             while sd.get_stream().active and not self.stop_playback:
                 time.sleep(0.1)
         except Exception:
             pass
+
         sd.stop()
 
-        # Zabezpieczenie przy zamknięciu okna
         try:
             self.play_btn.config(text="Odtwórz")
         except tk.TclError:
             pass
 
-    # ------------------- zakończenie -------------------
+    # ------------------- ZAKOŃCZENIE -------------------
 
     def quit_program(self):
-        # zatrzymaj odtwarzanie
         self.stop_playback = True
         sd.stop()
-
-        # zamknij stream jeśli istnieje
-        if hasattr(self, 'stream') and self.stream is not None:
-            try:
-                self.stream.stop()
-                self.stream.close()
-            except Exception:
-                pass
-
-        # zamknij okno Tkinter
         self.root.destroy()
 
-        # zakończ cały program natychmiast
         try:
             sys.exit(0)
         except SystemExit:
